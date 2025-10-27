@@ -1,0 +1,294 @@
+
+' CHIP SETUP
+' Using PIC16F18875 with a 32 Mhz internal oscillator.
+#Chip 16f18875, 32
+ANSELC = 0   ' Set PortC to digital I/O mode
+
+' CONFIGURE MOTOR OUTPUTS
+#Define RMF     PortC.3
+#Define RMB   PortC.2
+#Define LMF      PortC.1
+#Define LMB     PortC.0
+
+' CONFIGURE WALL SENSOR INPUTS
+#Define WSL ANA1	' RA1 on pin 3
+#Define WSF ANA2	' RA2 on pin 4
+
+' Flame sensors 
+#Define Flame ANA3	' RA3 on pin 5
+#Define Flame_Threshold 245
+
+' Line Detection
+#Define	Line_Detect	PortA.0	' RA0 on pin 2
+
+
+' CONFIGURE EXTINGUISHING FAN OUTPUT
+#Define Fan PortB.7		' RB7 on pin 40
+
+' CONFIGURE LCD OUTPUT
+#Define LCD_LINES 2
+#Define LCD_WIDTH 16
+#Define LCD_IO 4
+#Define LCD_DB4 PortD.4	    ' RD4 on pin 27
+#Define LCD_DB5 PortD.5	    ' RD5 on pin 28
+#Define LCD_DB6 PortD.6	    ' RD6 on pin 29
+#Define LCD_DB7 PortD.7	    ' RD7 on pin 30
+#Define LCD_RS PortD.0	    ' RD0 on pin 19
+#Define LCD_RW PortD.1	    ' RD1 on pin 20
+#Define LCD_ENABLE PortD.2	' RD2 on pin 21
+#Define LCD_SPEED FAST	    ' change to SLOW if not working
+
+' Configure the motor pins as output
+Dir RMF	Out
+Dir RMB	Out
+Dir LMF	Out
+Dir LMB	Out
+
+Dir LCD_RS Out
+Dir LCD_RW Out
+Dir LCD_ENABLE Out
+Dir LCD_DB4 Out
+Dir LCD_DB5 Out
+Dir LCD_DB6 Out
+Dir LCD_DB7 Out
+Dir Line_Detect In
+
+Dir PortA.2 In			' Pin for ANA2 configured as input
+Dir PortA.1 In			' Pin for ANA1 configured as input
+Dim Wall_Left_Value as Byte	' raw value read from ADC (0..255)
+Dim Wall_Front_Value as Byte
+Dim Wall_Left_Distance as Byte	' calculated distance
+Dim Wall_Front_Distance as Byte
+
+Dir PortA.3 In			    ' Pin for ANA3 configured as input
+Dim Flame_Value as Byte	    ' 0..255 read from sensor
+Dir Fan Out
+INLVLA0 = 0	' RA0 TTL input voltage levels
+Fan = 0				    ' start with fan off
+
+
+' Initialize output values
+RMF = 0
+RMB = 0
+LMF = 0
+LMB = 0
+
+numLines = 0 
+lastLineState = 1
+
+' MOVEMENT SUBROUTINES
+Sub Move_Forward ()
+    RMF = 1
+    RMB = 0
+    LMF = 1
+    LMB = 0
+
+End Sub
+
+Sub Move_Backward ()
+    RMF = 0
+    RMB = 1
+    LMF = 0
+    LMB = 1
+    
+End Sub
+
+Sub Move_Stop ()
+    RMF = 0
+    RMB = 0
+    LMF = 0
+    LMB = 0
+    
+End Sub
+
+Sub Move_Right ()
+    RMF = 0
+    RMB = 0
+    LMF = 1
+    LMB = 0
+End Sub
+
+Sub Move_Left()
+    RMF = 1
+    RMB = 0
+    LMF = 0
+    LMB = 0
+End Sub
+
+Sub Pivot_Left()
+    RMF = 1
+    RMB = 0
+    LMF = 0
+    LMB = 1
+End Sub
+
+Sub Pivot_Right()
+    RMF = 0
+    RMB = 1
+    LMF = 1
+    LMB = 0
+End Sub
+
+
+Sub extinguish_Flame()
+    Fan = 1
+    Pivot_Left()
+    wait 100 ms
+    Move_Stop()
+    wait 3000 ms 
+
+    Pivot_Left()
+    wait 100 ms
+    Move_Stop()
+    Wait 3000 ms
+
+    Pivot_Right()
+    wait 100 ms
+    Move_Stop()
+    Wait 3000 ms
+
+    Pivot_Right()
+    wait 100 ms
+    Move_Stop()
+    Wait 3000 ms
+
+    Pivot_Left()
+    wait 100 ms
+    Move_Stop()
+    wait 3000 ms
+
+    Pivot_Left()
+    wait 100 ms
+    Move_Stop()
+    Wait 3000 ms    
+
+    Pivot_Right()
+    wait 100 ms
+    Move_Stop()
+    Wait 3000 ms
+
+    Pivot_Right()
+    wait 100 ms
+    Move_Stop()
+    Wait 3000 ms        
+
+End Sub
+
+Sub wall_hugging() 
+    Wall_Left_Value = ReadAD( WSL )
+    Wall_Front_Value = ReadAD( WSF )
+    Wall_Left_Distance = ( (6787 / (Wall_Left_Value - 3)) - 4) / 5
+    Wall_Front_Distance = ( (6787 / (Wall_Front_Value - 3)) - 4) / 5
+
+    if Wall_Front_Distance < 10 Then
+        Move_Backward() 
+        wait 100 ms
+
+    Else if Wall_Left_Distance > 30 Then 
+        Move_Forward()
+        wait 80 ms
+        Pivot_Left()
+        wait 200 ms 
+        Move_Left()
+        wait 80 ms
+    
+    Else if Wall_Left_Distance > 20 Then
+        Move_Left()
+        wait 100 ms 
+        Move_Forward() 
+        wait 100 ms 
+
+    Else if Wall_Left_Distance < 10 Then
+        Move_Right()
+    Else 
+        if Wall_Front_Distance > 15 Then
+            Move_Forward() 
+
+        Else 
+            Pivot_Right()
+            wait 175 ms 
+
+        
+        End if 
+    End if 
+
+End Sub
+
+Sub countLines() 
+    if lastLineState = 1 and Line_Detect = 0 Then 
+        numLines += 1 			   
+
+    end If 
+
+    lastLineState = Line_Detect
+
+End Sub
+
+Sub room123() 
+    ' read the analog value of flame detection (0..255)
+    Flame_Value = ReadAD( Flame )
+
+    ' turn fan on if flame value < threshold
+    If Flame_Value < Flame_Threshold Then
+        // CLS			    ' clear screen
+        // Locate 0,0
+        // Print "Flame: "
+        // Print Flame_Value
+        // Locate 1,5
+        extinguish_Flame()
+    End If
+
+    If Flame_Value > Flame_Threshold Then
+        // CLS			    ' clear screen
+        // Locate 0,0
+        // Print "L: "
+        // Locate 0,3
+        // Print Wall_Left_Distance
+        // Locate 0,6
+        // print "F: "
+        // locate 0,10
+        // print Wall_Front_Distance 
+        Fan = 0 
+        wall_hugging()
+    End If
+End Sub
+
+Sub room4() 
+    Move_Forward() 
+    wait 50 ms 
+    Pivot_Left() 
+    wait 200 ms
+    Move_Forward() 
+    wait 500 ms
+End Sub
+
+
+Do Forever
+    CLS			    ' clear screen
+    Locate 0,0
+    Print "L: "
+    Locate 0,3
+    Print Wall_Left_Distance
+    Locate 0,6
+    print "F: "
+    locate 0,10
+    print Wall_Front_Distance 
+    Locate 1,0
+    Print "Lines: "
+    Locate 1, 6
+    Print numLines
+    countLines()
+    if numLines = 6 Then 
+        // room4()
+        wall_hugging()
+        wait 6 s  
+        Pivot_Right() 
+        wait 300 ms 
+        Move_Left() 
+        wait 1 s 
+        room123() 
+    Else
+        room123()
+    end If
+    
+Loop
