@@ -1,48 +1,50 @@
+' ==============================================================================
+' Firefighter Robot Project
+' ==============================================================================
+' Controller: PIC16F18875
+' Oscillator: 32 MHz Internal
+' ------------------------------------------------------------------------------
 
-' CHIP SETUP
-' Using PIC16F18875 with a 32 Mhz internal oscillator.
 #Chip 16f18875, 32
-ANSELC = 0   ' Set PortC to digital I/O mode
 
-' CONFIGURE MOTOR OUTPUTS
-#Define RMF     PortC.3
-#Define RMB   PortC.2
-#Define LMF      PortC.1
-#Define LMB     PortC.0
+' --- Motor Output Configurations ---
+#Define MOT_RIGHT_FWD  PortC.3
+#Define MOT_RIGHT_BACK PortC.2
+#Define MOT_LEFT_FWD   PortC.1
+#Define MOT_LEFT_BACK  PortC.0
 
-' CONFIGURE WALL SENSOR INPUTS
-#Define WSL ANA1	' RA1 on pin 3
-#Define WSF ANA2	' RA2 on pin 4
+' --- Wall Sensor Inputs ---
+#Define SENSOR_WALL_LEFT  ANA1	' RA1 (Pin 3)
+#Define SENSOR_WALL_FRONT ANA2	' RA2 (Pin 4)
 
-' Flame sensors 
-#Define Flame ANA3	' RA3 on pin 5
-#Define Flame_Threshold 245
+' --- Flame Sensor Configuration ---
+#Define SENSOR_FLAME       ANA3	' RA3 (Pin 5)
+#Define FLAME_THRESHOLD    245
 
-' Line Detection
-#Define	Line_Detect	PortA.0	' RA0 on pin 2
+' --- Line Detection Configuration ---
+#Define LINE_DETECT_PIN    PortA.0	' RA0 (Pin 2)
 
+' --- Fan Output Configuration ---
+#Define FAN_PIN            PortB.7	' RB7 (Pin 40)
 
-' CONFIGURE EXTINGUISHING FAN OUTPUT
-#Define Fan PortB.7		' RB7 on pin 40
+' --- LCD Display Configuration ---
+#Define LCD_LINES   2
+#Define LCD_WIDTH   16
+#Define LCD_IO      4
+#Define LCD_DB4     PortD.4	    ' RD4 (Pin 27)
+#Define LCD_DB5     PortD.5	    ' RD5 (Pin 28)
+#Define LCD_DB6     PortD.6     ' RD6 (Pin 29)
+#Define LCD_DB7     PortD.7     ' RD7 (Pin 30)
+#Define LCD_RS      PortD.0     ' RD0 (Pin 19)
+#Define LCD_RW      PortD.1     ' RD1 (Pin 20)
+#Define LCD_ENABLE  PortD.2     ' RD2 (Pin 21)
+#Define LCD_SPEED   FAST        ' Standard speed
 
-' CONFIGURE LCD OUTPUT
-#Define LCD_LINES 2
-#Define LCD_WIDTH 16
-#Define LCD_IO 4
-#Define LCD_DB4 PortD.4	    ' RD4 on pin 27
-#Define LCD_DB5 PortD.5	    ' RD5 on pin 28
-#Define LCD_DB6 PortD.6	    ' RD6 on pin 29
-#Define LCD_DB7 PortD.7	    ' RD7 on pin 30
-#Define LCD_RS PortD.0	    ' RD0 on pin 19
-#Define LCD_RW PortD.1	    ' RD1 on pin 20
-#Define LCD_ENABLE PortD.2	' RD2 on pin 21
-#Define LCD_SPEED FAST	    ' change to SLOW if not working
-
-' Configure the motor pins as output
-Dir RMF	Out
-Dir RMB	Out
-Dir LMF	Out
-Dir LMB	Out
+' --- Pin Direction Configuration ---
+Dir MOT_RIGHT_FWD Out
+Dir MOT_RIGHT_BACK Out
+Dir MOT_LEFT_FWD Out
+Dir MOT_LEFT_BACK Out
 
 Dir LCD_RS Out
 Dir LCD_RW Out
@@ -51,244 +53,226 @@ Dir LCD_DB4 Out
 Dir LCD_DB5 Out
 Dir LCD_DB6 Out
 Dir LCD_DB7 Out
-Dir Line_Detect In
 
-Dir PortA.2 In			' Pin for ANA2 configured as input
-Dir PortA.1 In			' Pin for ANA1 configured as input
-Dim Wall_Left_Value as Byte	' raw value read from ADC (0..255)
-Dim Wall_Front_Value as Byte
-Dim Wall_Left_Distance as Byte	' calculated distance
-Dim Wall_Front_Distance as Byte
+Dir LINE_DETECT_PIN In
+Dir PortA.2 In  ' FRONT Wall Sensor
+Dir PortA.1 In  ' LEFT Wall Sensor
+Dir PortA.3 In  ' Flame Sensor
+Dir FAN_PIN Out
 
-Dir PortA.3 In			    ' Pin for ANA3 configured as input
-Dim Flame_Value as Byte	    ' 0..255 read from sensor
-Dir Fan Out
-INLVLA0 = 0	' RA0 TTL input voltage levels
-Fan = 0				    ' start with fan off
+' --- Variable Definitions ---
+Dim wall_left_raw as Byte
+Dim wall_front_raw as Byte
+Dim wall_left_dist as Byte
+Dim wall_front_dist as Byte
+Dim flame_raw_val as Byte
+Dim total_lines_detected as Byte   ' Tracks room count
+Dim last_line_state as Bit         ' For edge detection
 
-
-' Initialize output values
-RMF = 0
-RMB = 0
-LMF = 0
-LMB = 0
-
-numLines = 0 
-lastLineState = 1
 
 ' MOVEMENT SUBROUTINES
-Sub Move_Forward ()
-    RMF = 1
-    RMB = 0
-    LMF = 1
-    LMB = 0
+' ==============================================================================
+' Movement Subroutines
+' ==============================================================================
 
+Sub Move_Forward ()
+    MOT_RIGHT_FWD = 1
+    MOT_RIGHT_BACK = 0
+    MOT_LEFT_FWD = 1
+    MOT_LEFT_BACK = 0
 End Sub
 
 Sub Move_Backward ()
-    RMF = 0
-    RMB = 1
-    LMF = 0
-    LMB = 1
-    
+    MOT_RIGHT_FWD = 0
+    MOT_RIGHT_BACK = 1
+    MOT_LEFT_FWD = 0
+    MOT_LEFT_BACK = 1
 End Sub
 
 Sub Move_Stop ()
-    RMF = 0
-    RMB = 0
-    LMF = 0
-    LMB = 0
-    
+    MOT_RIGHT_FWD = 0
+    MOT_RIGHT_BACK = 0
+    MOT_LEFT_FWD = 0
+    MOT_LEFT_BACK = 0
 End Sub
 
 Sub Move_Right ()
-    RMF = 0
-    RMB = 0
-    LMF = 1
-    LMB = 0
+    MOT_RIGHT_FWD = 0
+    MOT_RIGHT_BACK = 0
+    MOT_LEFT_FWD = 1
+    MOT_LEFT_BACK = 0
 End Sub
 
 Sub Move_Left()
-    RMF = 1
-    RMB = 0
-    LMF = 0
-    LMB = 0
+    MOT_RIGHT_FWD = 1
+    MOT_RIGHT_BACK = 0
+    MOT_LEFT_FWD = 0
+    MOT_LEFT_BACK = 0
 End Sub
 
 Sub Pivot_Left()
-    RMF = 1
-    RMB = 0
-    LMF = 0
-    LMB = 1
+    MOT_RIGHT_FWD = 1
+    MOT_RIGHT_BACK = 0
+    MOT_LEFT_FWD = 0
+    MOT_LEFT_BACK = 1
 End Sub
 
 Sub Pivot_Right()
-    RMF = 0
-    RMB = 1
-    LMF = 1
-    LMB = 0
+    MOT_RIGHT_FWD = 0
+    MOT_RIGHT_BACK = 1
+    MOT_LEFT_FWD = 1
+    MOT_LEFT_BACK = 0
 End Sub
 
 
-Sub extinguish_Flame()
-    Fan = 1
-    Pivot_Left()
-    wait 100 ms
-    Move_Stop()
-    wait 3000 ms 
+' ==============================================================================
+' Fire Extinguishing Logic
+' ==============================================================================
 
-    Pivot_Left()
-    wait 100 ms
-    Move_Stop()
-    Wait 3000 ms
-
-    Pivot_Right()
-    wait 100 ms
-    Move_Stop()
-    Wait 3000 ms
-
-    Pivot_Right()
-    wait 100 ms
-    Move_Stop()
-    Wait 3000 ms
-
-    Pivot_Left()
-    wait 100 ms
-    Move_Stop()
-    wait 3000 ms
-
-    Pivot_Left()
-    wait 100 ms
-    Move_Stop()
-    Wait 3000 ms    
-
-    Pivot_Right()
-    wait 100 ms
-    Move_Stop()
-    Wait 3000 ms
-
-    Pivot_Right()
-    wait 100 ms
-    Move_Stop()
-    Wait 3000 ms        
-
-End Sub
-
-Sub wall_hugging() 
-    Wall_Left_Value = ReadAD( WSL )
-    Wall_Front_Value = ReadAD( WSF )
-    Wall_Left_Distance = ( (6787 / (Wall_Left_Value - 3)) - 4) / 5
-    Wall_Front_Distance = ( (6787 / (Wall_Front_Value - 3)) - 4) / 5
-
-    if Wall_Front_Distance < 10 Then
-        Move_Backward() 
-        wait 100 ms
-
-    Else if Wall_Left_Distance > 30 Then 
-        Move_Forward()
-        wait 80 ms
-        Pivot_Left()
-        wait 200 ms 
-        Move_Left()
-        wait 80 ms
+Sub Extinguish_Flame()
+    FAN_PIN = 1
     
-    Else if Wall_Left_Distance > 20 Then
-        Move_Left()
-        wait 100 ms 
-        Move_Forward() 
-        wait 100 ms 
+    ' Perform scanning sweeps to ensure flame is fully out
+    Loop_Extinguish(2) ' Sweep twice
+    
+    FAN_PIN = 0
+End Sub
 
-    Else if Wall_Left_Distance < 10 Then
+' Helper for sweeping fan
+Sub Loop_Extinguish(num_sweeps)
+    For i = 1 to num_sweeps
+        ' Pivot Left Scan
+        Pivot_Left()
+        Wait 100 ms
+        Move_Stop()
+        Wait 3 S
+        
+        Pivot_Left()
+        Wait 100 ms
+        Move_Stop()
+        Wait 3 S
+        
+        ' Pivot Right Scan
+        Pivot_Right()
+        Wait 100 ms
+        Move_Stop()
+        Wait 3 S
+        
+        Pivot_Right()
+        Wait 100 ms
+        Move_Stop()
+        Wait 3 S
+    Next
+End Sub
+
+' ==============================================================================
+' Wall Navigation Logic
+' ==============================================================================
+
+Sub Wall_Hugging() 
+    wall_left_raw = ReadAD( SENSOR_WALL_LEFT )
+    wall_front_raw = ReadAD( SENSOR_WALL_FRONT )
+    
+    ' Convert raw value to distance (simplified formula)
+    wall_left_dist = ((6787 / (wall_left_raw - 3)) - 4) / 5
+    wall_front_dist = ((6787 / (wall_front_raw - 3)) - 4) / 5
+
+    ' Decision Matrix
+    If wall_front_dist < 10 Then
+        ' Too close to wall in front, back up
+        Move_Backward() 
+        Wait 100 ms
+    ElseIf wall_left_dist > 30 Then 
+        ' Too far from left wall, turn back toward it
+        Move_Forward()
+        Wait 80 ms
+        Pivot_Left()
+        Wait 200 ms 
+        Move_Left()
+        Wait 80 ms
+    ElseIf wall_left_dist > 20 Then
+        ' Veering away from wall, corrective left
+        Move_Left()
+        Wait 100 ms 
+        Move_Forward() 
+        Wait 100 ms 
+    ElseIf wall_left_dist < 10 Then
+        ' Too close to left wall, pull away
         Move_Right()
     Else 
-        if Wall_Front_Distance > 15 Then
+        ' Maintain course or turn corner
+        If wall_front_dist > 15 Then
             Move_Forward() 
-
         Else 
             Pivot_Right()
-            wait 175 ms 
-
-        
-        End if 
-    End if 
-
+            Wait 175 ms 
+        End If 
+    End If 
 End Sub
 
-Sub countLines() 
-    if lastLineState = 1 and Line_Detect = 0 Then 
-        numLines += 1 			   
+' ==============================================================================
+' Event Detection & Room Handling
+' ==============================================================================
 
-    end If 
-
-    lastLineState = Line_Detect
-
+Sub Count_Lines() 
+    ' Rising edge detection for line crossing
+    If last_line_state = 1 And LINE_DETECT_PIN = 0 Then 
+        total_lines_detected += 1 			   
+    End If 
+    last_line_state = LINE_DETECT_PIN
 End Sub
 
-Sub room123() 
-    ' read the analog value of flame detection (0..255)
-    Flame_Value = ReadAD( Flame )
+Sub Handle_Room_Navigation() 
+    flame_raw_val = ReadAD( SENSOR_FLAME )
 
-    ' turn fan on if flame value < threshold
-    If Flame_Value < Flame_Threshold Then
-        // CLS			    ' clear screen
-        // Locate 0,0
-        // Print "Flame: "
-        // Print Flame_Value
-        // Locate 1,5
-        extinguish_Flame()
-    End If
-
-    If Flame_Value > Flame_Threshold Then
-        // CLS			    ' clear screen
-        // Locate 0,0
-        // Print "L: "
-        // Locate 0,3
-        // Print Wall_Left_Distance
-        // Locate 0,6
-        // print "F: "
-        // locate 0,10
-        // print Wall_Front_Distance 
-        Fan = 0 
-        wall_hugging()
+    If flame_raw_val < FLAME_THRESHOLD Then
+        ' Flame detected!
+        Extinguish_Flame()
+    Else
+        ' No flame, continue patrolling
+        FAN_PIN = 0 
+        Wall_Hugging()
     End If
 End Sub
 
-Sub room4() 
+Sub Execute_Room_4_Sequence() 
+    ' Specialized maneuver for final room
     Move_Forward() 
-    wait 50 ms 
+    Wait 50 ms 
     Pivot_Left() 
-    wait 200 ms
+    Wait 200 ms
     Move_Forward() 
-    wait 500 ms
+    Wait 500 ms
 End Sub
 
+
+' ==============================================================================
+' Main Operation Loop
+' ==============================================================================
 
 Do Forever
-    CLS			    ' clear screen
+    ' --- Display Status ---
+    CLS
     Locate 0,0
-    Print "L: "
-    Locate 0,3
-    Print Wall_Left_Distance
+    Print "L:" : Print wall_left_dist
     Locate 0,6
-    print "F: "
-    locate 0,10
-    print Wall_Front_Distance 
+    Print "F:" : Print wall_front_dist 
     Locate 1,0
-    Print "Lines: "
-    Locate 1, 6
-    Print numLines
-    countLines()
-    if numLines = 6 Then 
-        // room4()
-        wall_hugging()
-        wait 6 s  
-        Pivot_Right() 
-        wait 300 ms 
-        Move_Left() 
-        wait 1 s 
-        room123() 
-    Else
-        room123()
-    end If
+    Print "Lines:" : Print total_lines_detected
+
+    ' --- Logic Execution ---
+    Count_Lines()
     
+    If total_lines_detected = 6 Then 
+        ' Room 4 Special Handling
+        Wall_Hugging()
+        Wait 6 S  
+        Pivot_Right() 
+        Wait 300 ms 
+        Move_Left() 
+        Wait 1 S 
+        Handle_Room_Navigation() 
+    Else
+        Handle_Room_Navigation()
+    End If
 Loop

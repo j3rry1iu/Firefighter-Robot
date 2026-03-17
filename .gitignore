@@ -1,0 +1,18 @@
+# Great Cow BASIC Compilation Artifacts
+*.hex
+*.lst
+*.asm
+*.o
+*.err
+
+# OS Generated Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# VS Code / IDE Metadata
+.vscode/
+.idea/
+*.swp
+*.swo
